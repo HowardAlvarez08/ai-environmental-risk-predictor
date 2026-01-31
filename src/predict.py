@@ -36,19 +36,43 @@ def align_features(X, trained_features):
 
 
 def predict_risks(df: pd.DataFrame, models: dict) -> pd.DataFrame:
+    """
+    Predict risk probabilities and classes using trained models.
+    Handles single-class models safely.
+    """
     df_out = df.copy()
 
-    # Numeric only
-    X = df_out.select_dtypes(include=["number"])
+    # Use only numeric columns (drop datetime, strings, etc.)
+    X = df.select_dtypes(include=[np.number])
 
     if X.empty:
         raise ValueError("No numeric features available for prediction.")
 
-    # 🔑 ALIGN FEATURES PER MODEL
-    for risk in models:
-        trained_features = models[risk].feature_names_in_
-        X_aligned = align_features(X.copy(), trained_features)
+    for risk_name, model in models.items():
+        try:
+            if hasattr(model, "predict_proba"):
+                proba = model.predict_proba(X)
 
-        df_out[f"{risk}_risk_prob"] = models[risk].predict_proba(X_aligned)[:, 1]
+                # ✅ Case 1: normal binary model
+                if proba.shape[1] == 2:
+                    df_out[f"{risk_name}_risk_prob"] = proba[:, 1]
+
+                # ✅ Case 2: single-class model
+                else:
+                    only_class = model.classes_[0]
+                    df_out[f"{risk_name}_risk_prob"] = (
+                        np.ones(len(X)) if only_class == 1 else np.zeros(len(X))
+                    )
+            else:
+                # Fallback (rare)
+                df_out[f"{risk_name}_risk_prob"] = model.predict(X)
+
+            # Predicted class
+            df_out[f"{risk_name}_risk_pred"] = model.predict(X)
+
+        except Exception as e:
+            df_out[f"{risk_name}_risk_prob"] = np.nan
+            df_out[f"{risk_name}_risk_pred"] = np.nan
+            print(f"⚠️ Prediction failed for {risk_name}: {e}")
 
     return df_out
