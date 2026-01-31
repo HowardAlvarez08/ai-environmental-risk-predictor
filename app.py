@@ -9,7 +9,6 @@ from src.feature_engineering import engineer_features
 from src.predict import load_models, predict_risks
 from src.recommendation import apply_risk_alerts
 
-
 # -------------------------------
 # Streamlit Page Config
 # -------------------------------
@@ -25,10 +24,8 @@ st.write("Real-time weather-driven risk assessment for floods, storms, rain, and
 # Sidebar Controls
 # -------------------------------
 st.sidebar.header("Location Settings")
-
 latitude = st.sidebar.number_input("Latitude", value=14.5995)
 longitude = st.sidebar.number_input("Longitude", value=120.9842)
-
 refresh = st.sidebar.button("🔄 Fetch & Predict")
 
 # -------------------------------
@@ -66,45 +63,39 @@ if refresh:
     latest = df_final.iloc[-1]
 
     cols = st.columns(4)
-
     for i, risk in enumerate(
         [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
     ):
+        alert_col = f"{risk}_risk_alert"
         cols[i].metric(
             label=risk.replace("_", " ").title(),
             value=f"{latest[risk + '_risk_prob']:.2f}",
-            delta=latest[risk + "_alert"]
+            delta=latest[alert_col]
         )
 
+    # -------------------------------
+    # Filter detailed output for today
+    # -------------------------------
     st.subheader("🧾 Detailed Output (Today)")
 
-    # -------------------------------
-    # Select key columns for display
-    # -------------------------------
-    columns_to_show = [
-        "date",
-        "temperature_mean",
-        "relative_humidity_mean",
-        "rainfall",
-        "flood_risk_prob",
-        "flood_risk_alert",
-        "rain_risk_prob",
-        "rain_risk_alert",
-        "storm_risk_prob",
-        "storm_risk_alert",
-        "landslide_risk_prob",
-        "landslide_risk_alert",
-        "overall_alert"
+    # Ensure 'date' column is datetime
+    df_final['date'] = pd.to_datetime(df_final['date'])
+
+    today = pd.Timestamp(datetime.now().date())
+    df_today = df_final[df_final['date'].dt.date == today.date()]
+
+    # Select only key columns to avoid table being too wide
+    selected_cols = [
+        'date', 'temperature_mean', 'relative_humidity_mean', 'wind_speed_mean',
+        'flood_risk_prob', 'flood_risk_alert',
+        'rain_risk_prob', 'rain_risk_alert',
+        'storm_risk_prob', 'storm_risk_alert',
+        'landslide_risk_prob', 'landslide_risk_alert',
+        'overall_alert'
     ]
+    df_today = df_today[selected_cols]
 
-    # Ensure 'date' is datetime
-    df_final["date"] = pd.to_datetime(df_final["date"]).dt.date
-
-    # Filter for today
-    today = datetime.now().date()
-    df_today = df_final[df_final["date"] == today]
-
-    st.dataframe(df_today[columns_to_show])
+    st.dataframe(df_today)
 
 else:
     st.info("👈 Click **Fetch & Predict** to run the model.")
