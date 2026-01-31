@@ -8,7 +8,6 @@ from src.feature_engineering import engineer_features
 from src.predict import load_models, predict_risks
 from src.recommendation import apply_risk_alerts
 
-
 # -------------------------------
 # Streamlit Page Config
 # -------------------------------
@@ -64,7 +63,6 @@ if refresh:
 
     latest = df_final.iloc[-1]
 
-    cols = st.columns(4)
     # Get all risk names dynamically
     risk_names = [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
 
@@ -78,13 +76,8 @@ if refresh:
         # Safely handle missing alert column
         alert_value = latest[alert_col] if alert_col in df_final.columns else None
 
-    for i, risk in enumerate(
-        [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
-    ):
         cols[i].metric(
             label=risk.replace("_", " ").title(),
-            value=f"{latest[risk + '_risk_prob']:.2f}",
-            delta=latest[risk + "_alert"]
             value=f"{latest[risk_prob_col]:.2f}" if risk_prob_col in df_final else "N/A",
             delta=alert_value
         )
