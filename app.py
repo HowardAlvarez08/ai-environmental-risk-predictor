@@ -1,103 +1,82 @@
 # app.py
+
 import streamlit as st
 import pandas as pd
+
 from src.data_fetch import fetch_real_time_weather
 from src.feature_engineering import engineer_features
-from src.models_loader import load_models
-from src.predict_risks import predict_risks
-from src.rule_recommendations import apply_alerts
-import pickle
+from src.predict import load_models, predict_risks
+from src.recommendation import apply_risk_alerts
 
-# ------------------------------
-# Page setup
-# ------------------------------
+
+# -------------------------------
+# Streamlit Page Config
+# -------------------------------
 st.set_page_config(
     page_title="AI Environmental Risk Predictor",
     layout="wide"
 )
-st.title("🌦️ AI Environmental Risk Predictor")
-st.markdown("Predict real-time flood, rain, storm, and landslide risks.")
 
-# ------------------------------
-# Sidebar options
-# ------------------------------
-st.sidebar.header("Settings")
-lat = st.sidebar.number_input("Latitude", value=14.5995)
-lon = st.sidebar.number_input("Longitude", value=120.9842)
-timezone = st.sidebar.selectbox("Timezone", ["Asia/Manila", "Asia/Singapore"], index=0)
+st.title("🌏 AI Environmental Risk Predictor")
+st.write("Real-time weather-driven risk assessment for floods, storms, rain, and landslides.")
 
-# ------------------------------
-# Step 1: Fetch data
-# ------------------------------
-st.info("Fetching real-time weather data...")
-df_weather = fetch_real_time_weather(lat=lat, lon=lon, timezone=timezone)
-st.success("✅ Weather data fetched!")
+# -------------------------------
+# Sidebar Controls
+# -------------------------------
+st.sidebar.header("Location Settings")
 
-st.dataframe(df_weather.head(5))
+latitude = st.sidebar.number_input("Latitude", value=14.5995)
+longitude = st.sidebar.number_input("Longitude", value=120.9842)
 
-# ------------------------------
-# Step 2: Feature engineering
-# ------------------------------
-st.info("Engineering features...")
-df_features = engineer_features(df_weather)
-st.success("✅ Features ready")
+refresh = st.sidebar.button("🔄 Fetch & Predict")
 
-st.dataframe(df_features.head(5))
+# -------------------------------
+# Load models once
+# -------------------------------
+@st.cache_resource
+def load_all_models():
+    return load_models("models")
 
-# ------------------------------
-# Step 3: Load models and scaler
-# ------------------------------
-st.info("Loading trained models...")
+models = load_all_models()
 
-models = load_models("models")
+# -------------------------------
+# Main Pipeline
+# -------------------------------
+if refresh:
+    with st.spinner("Fetching real-time weather data..."):
+        df_raw = fetch_real_time_weather(latitude, longitude)
 
-# Load scaler and feature lists (assume saved with pickle)
-with open("models/scaler.pkl", "rb") as f:
-    scaler = pickle.load(f)
+    st.success("✅ Weather data fetched")
 
-with open("models/continuous_features.pkl", "rb") as f:
-    continuous_features = pickle.load(f)
+    with st.spinner("Engineering features..."):
+        df_features = engineer_features(df_raw)
 
-with open("models/binary_features.pkl", "rb") as f:
-    binary_features = pickle.load(f)
+    with st.spinner("Predicting risks..."):
+        df_pred = predict_risks(df_features, models)
 
-with open("models/cyclical_features.pkl", "rb") as f:
-    cyclical_features = pickle.load(f)
+    with st.spinner("Applying recommendations..."):
+        df_final = apply_risk_alerts(df_pred)
 
-st.success("✅ Models loaded!")
+    # -------------------------------
+    # Display Results
+    # -------------------------------
+    st.subheader("📊 Latest Risk Assessment")
 
-# ------------------------------
-# Step 4: Predict risks
-# ------------------------------
-st.info("Predicting risks...")
-df_predicted = predict_risks(
-    df_features,
-    models,
-    scaler,
-    continuous_features,
-    binary_features=binary_features,
-    cyclical_features=cyclical_features
-)
-st.success("✅ Predictions done!")
+    latest = df_final.iloc[-1]
 
-# ------------------------------
-# Step 5: Apply alerts
-# ------------------------------
-st.info("Generating rule-based alerts...")
-df_alerts = apply_alerts(df_predicted)
-st.success("✅ Alerts ready!")
+    cols = st.columns(4)
 
-# ------------------------------
-# Step 6: Display results
-# ------------------------------
-st.header("Risk Predictions & Alerts")
-alert_cols = [col for col in df_alerts.columns if "_alert" in col]
-st.dataframe(df_alerts[alert_cols].tail(24))  # last 24 hours
+    for i, risk in enumerate(
+        [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
+    ):
+        cols[i].metric(
+            label=risk.replace("_", " ").title(),
+            value=f"{latest[risk + '_risk_prob']:.2f}",
+            delta=latest[risk + "_alert"]
+        )
 
-# Optional: download results
-st.download_button(
-    label="📥 Download CSV",
-    data=df_alerts.to_csv(index=False),
-    file_name="real_time_risks.csv",
-    mime="text/csv"
-)
+    st.subheader("🧾 Detailed Output")
+    st.dataframe(df_final.tail(24))
+
+else:
+    st.info("👈 Click **Fetch & Predict** to run the model.")
