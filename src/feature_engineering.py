@@ -1,45 +1,67 @@
 # src/feature_engineering.py
+
 import pandas as pd
 import numpy as np
 
-def engineer_features(df):
+
+def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply feature engineering to real-time weather data
+    to match training-time features.
+    """
+
     df = df.copy()
 
-    if "date" not in df.columns:
-        raise KeyError("Missing 'date' column in dataframe")
+    # -------------------------------
+    # Lag features (1h, 3h, 6h)
+    # -------------------------------
+    lag_features = [
+        "temperature_mean",
+        "relative_humidity_mean",
+        "rain_sum",
+        "precipitation_sum",
+        "wind_speed_max",
+        "wind_gust_max",
+        "soil_moisture_mean",
+        "sea_level_pressure_mean"
+    ]
 
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    for col in lag_features:
+        if col in df.columns:
+            df[f"{col}_lag1"] = df[col].shift(1)
+            df[f"{col}_lag3"] = df[col].shift(3)
+            df[f"{col}_lag6"] = df[col].shift(6)
 
-    # Time-based features
-    df['month'] = df['date'].dt.month
-    df['is_habagat'] = df['month'].isin([6,7,8,9]).astype(int)
-    df['is_amihan'] = df['month'].isin([11,12,1,2]).astype(int)
-    df['month_sin'] = np.sin(2 * np.pi * df["month"] / 12)
-    df['month_cos'] = np.cos(2 * np.pi * df["month"] / 12)
+    # -------------------------------
+    # Rolling statistics (3h, 6h)
+    # -------------------------------
+    rolling_features = [
+        "rain_sum",
+        "precipitation_sum",
+        "wind_speed_max",
+        "wind_gust_max"
+    ]
 
-    # Lag features
-    lag_hours = [1,6,24]
-    for lag in lag_hours:
-        df[f'precip_lag{lag}h'] = df['precipitation_sum'].shift(lag).fillna(0)
-        df[f'soil_lag{lag}h'] = df['soil_moisture_mean'].shift(lag).fillna(0)
+    for col in rolling_features:
+        if col in df.columns:
+            df[f"{col}_roll3"] = df[col].rolling(3).mean()
+            df[f"{col}_roll6"] = df[col].rolling(6).mean()
 
-    # Rolling sums
-    df['precip_6h_sum'] = df['precipitation_sum'].rolling(6, min_periods=1).sum()
-    df['precip_12h_sum'] = df['precipitation_sum'].rolling(12, min_periods=1).sum()
-    df['precip_24h_sum'] = df['precipitation_sum'].rolling(24, min_periods=1).sum()
-    df['precip_24h_mean'] = df['precipitation_sum'].rolling(24, min_periods=1).mean()
+    # -------------------------------
+    # Binary risk indicators
+    # -------------------------------
+    if "rain_sum" in df.columns:
+        df["heavy_rain_flag"] = (df["rain_sum"] > 10).astype(int)
 
-    # Thresholds
-    df['heavy_rain'] = (df['precipitation_sum'] >= 7.5).astype(int)
-    df['very_heavy_rain'] = (df['precipitation_sum'] >= 15.0).astype(int)
+    if "wind_gust_max" in df.columns:
+        df["strong_wind_flag"] = (df["wind_gust_max"] > 40).astype(int)
 
-    # Interaction
-    df['rain_soil_interaction'] = df['precipitation_sum'] * df['soil_moisture_mean']
+    # -------------------------------
+    # Final NaN handling (post-lags)
+    # -------------------------------
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    df[numeric_cols] = df[numeric_cols].fillna(method="bfill")
+    df[numeric_cols] = df[numeric_cols].fillna(method="ffill")
+    df[numeric_cols] = df[numeric_cols].fillna(0)
 
-    # Fill remaining NaNs
-    df.ffill(inplace=True)
-    df.bfill(inplace=True)
-    df.fillna(0, inplace=True)
-
-    df = df.set_index('date').sort_index()
     return df
