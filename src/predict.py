@@ -1,44 +1,57 @@
-import numpy as np
-import pandas as pd
-import joblib
-import tensorflow as tf
 import os
+import joblib
+import pandas as pd
+import streamlit as st
 
 
-def load_models(model_dir="models"):
+# -------------------------------------------------
+# Load all trained models (cached by Streamlit)
+# -------------------------------------------------
+@st.cache_resource
+def load_models(models_dir="models"):
     models = {}
 
-    models["flood"] = joblib.load(os.path.join(model_dir, "flood_model.joblib"))
-    models["storm"] = joblib.load(os.path.join(model_dir, "storm_model.joblib"))
-    models["rain"] = joblib.load(os.path.join(model_dir, "rain_model.joblib"))
-    models["landslide"] = joblib.load(os.path.join(model_dir, "landslide_model.joblib"))
+    model_files = {
+        "flood": "flood_model.pkl",
+        "storm": "storm_model.pkl",
+        "rain": "rain_model.pkl",
+        "landslide": "landslide_model.pkl",
+    }
 
-    models["dl"] = tf.keras.models.load_model(
-        os.path.join(model_dir, "dl_model.keras"),
-        compile=False
-    )
+    for name, filename in model_files.items():
+        path = os.path.join(models_dir, filename)
+        models[name] = joblib.load(path)
 
-    print("All models loaded successfully ✅")
     return models
 
 
-def predict_risks(df, models):
+# -------------------------------------------------
+# Predict risk probabilities
+# -------------------------------------------------
+def predict_risks(df: pd.DataFrame, models: dict) -> pd.DataFrame:
     """
-    df: engineered feature dataframe
-    models: dict of loaded models
+    Takes engineered feature DataFrame and trained models
+    Returns DataFrame with risk probability columns appended
     """
-
-    X = df.values
 
     df_out = df.copy()
 
+    # -------------------------------------------------
+    # IMPORTANT FIX:
+    # Drop all non-numeric columns (timestamps, objects)
+    # -------------------------------------------------
+    X = df_out.select_dtypes(include=["number"])
+
+    # Optional safety check
+    if X.empty:
+        raise ValueError("No numeric features available for prediction.")
+
+    # -------------------------------------------------
+    # Predict probabilities
+    # -------------------------------------------------
     df_out["flood_risk_prob"] = models["flood"].predict_proba(X)[:, 1]
     df_out["storm_risk_prob"] = models["storm"].predict_proba(X)[:, 1]
     df_out["rain_risk_prob"] = models["rain"].predict_proba(X)[:, 1]
     df_out["landslide_risk_prob"] = models["landslide"].predict_proba(X)[:, 1]
-
-    # Optional DL model
-    if "dl" in models:
-        df_out["dl_risk_prob"] = models["dl"].predict(X, verbose=0).flatten()
 
     return df_out
