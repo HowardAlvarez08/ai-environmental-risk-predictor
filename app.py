@@ -2,6 +2,7 @@
 
 import streamlit as st
 import pandas as pd
+from datetime import date
 
 from src.data_fetch import fetch_real_time_weather
 from src.feature_engineering import engineer_features
@@ -56,25 +57,24 @@ if refresh:
     with st.spinner("Applying recommendations..."):
         df_final = apply_risk_alerts(df_pred)
 
-# -------------------------------
-# Display Results
-# -------------------------------
-st.subheader("📊 Latest Risk Assessment")
+    # -------------------------------
+    # Display Results
+    # -------------------------------
+    st.subheader("📊 Latest Risk Assessment")
 
-latest = df_final.iloc[-1]
+    latest = df_final.iloc[-1]
+    cols = st.columns(4)
 
-cols = st.columns(4)
+    for i, risk in enumerate(
+        [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
+    ):
+        cols[i].metric(
+            label=risk.replace("_", " ").title(),
+            value=f"{latest[risk + '_risk_prob']:.2f}",
+            delta=latest[risk + "_alert"]
+        )
 
-for i, risk in enumerate(
-    [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
-):
-    cols[i].metric(
-        label=risk.replace("_", " ").title(),
-        value=f"{latest[risk + '_risk_prob']:.2f}",
-        delta=latest[risk + "_alert"]
-    )
-
-st.subheader("🧾 Detailed Output")
+    st.subheader("🧾 Detailed Output")
 
     # -------------------------------
     # Filter columns for display
@@ -94,17 +94,16 @@ st.subheader("🧾 Detailed Output")
         "landslide_risk_alert",
         "overall_alert"
     ]
-    
-    # Convert date to proper datetime (just date, no time)
+
+    # Convert date to proper datetime (only date part)
     df_final["date"] = pd.to_datetime(df_final["date"]).dt.date
-    
-    # Filter for today
+
+    # Filter for today's date
     today = pd.to_datetime("today").date()
     df_final_today = df_final[df_final["date"] == today]
-    
-    # Display
-    st.dataframe(df_final_today[columns_to_show])
 
+    # Display table
+    st.dataframe(df_final_today[columns_to_show])
 
 else:
     st.info("👈 Click **Fetch & Predict** to run the model.")
