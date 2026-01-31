@@ -3,9 +3,6 @@ import joblib
 import pandas as pd
 
 
-# --------------------------------------------------
-# Load all trained models (joblib)
-# --------------------------------------------------
 def load_models(model_dir="models"):
     models = {}
 
@@ -18,35 +15,40 @@ def load_models(model_dir="models"):
 
     for name, filename in model_files.items():
         path = os.path.join(model_dir, filename)
-
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"❌ Model file not found: {path}")
-
         models[name] = joblib.load(path)
 
     return models
 
 
-# --------------------------------------------------
-# Predict risk probabilities
-# --------------------------------------------------
+def align_features(X, trained_features):
+    """
+    Ensure runtime features match training features exactly
+    """
+    # Add missing columns
+    for col in trained_features:
+        if col not in X.columns:
+            X[col] = 0
+
+    # Drop extra columns
+    X = X[trained_features]
+
+    return X
+
+
 def predict_risks(df: pd.DataFrame, models: dict) -> pd.DataFrame:
     df_out = df.copy()
 
-    # ✅ VERY IMPORTANT:
-    # Keep ONLY numeric columns (drops Timestamp, datetime, objects)
+    # Numeric only
     X = df_out.select_dtypes(include=["number"])
 
-    # Optional safety check
     if X.empty:
-        raise ValueError("❌ No numeric features available for prediction.")
+        raise ValueError("No numeric features available for prediction.")
 
-    # --------------------------------------------------
-    # Predict probabilities
-    # --------------------------------------------------
-    df_out["flood_risk_prob"] = models["flood"].predict_proba(X)[:, 1]
-    df_out["rain_risk_prob"] = models["rain"].predict_proba(X)[:, 1]
-    df_out["storm_risk_prob"] = models["storm"].predict_proba(X)[:, 1]
-    df_out["landslide_risk_prob"] = models["landslide"].predict_proba(X)[:, 1]
+    # 🔑 ALIGN FEATURES PER MODEL
+    for risk in models:
+        trained_features = models[risk].feature_names_in_
+        X_aligned = align_features(X.copy(), trained_features)
+
+        df_out[f"{risk}_risk_prob"] = models[risk].predict_proba(X_aligned)[:, 1]
 
     return df_out
