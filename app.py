@@ -2,11 +2,13 @@
 
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 
 from src.data_fetch import fetch_real_time_weather
 from src.feature_engineering import engineer_features
 from src.predict import load_models, predict_risks
 from src.recommendation import apply_risk_alerts
+
 
 # -------------------------------
 # Streamlit Page Config
@@ -63,27 +65,46 @@ if refresh:
 
     latest = df_final.iloc[-1]
 
-    # Get all risk names dynamically
-    risk_names = [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
+    cols = st.columns(4)
 
-    # Create columns dynamically
-    cols = st.columns(len(risk_names))
-
-    for i, risk in enumerate(risk_names):
-        risk_prob_col = risk + "_risk_prob"
-        alert_col = risk + "_alert"
-
-        # Safely handle missing alert column
-        alert_value = latest[alert_col] if alert_col in df_final.columns else None
-
+    for i, risk in enumerate(
+        [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
+    ):
         cols[i].metric(
             label=risk.replace("_", " ").title(),
-            value=f"{latest[risk_prob_col]:.2f}" if risk_prob_col in df_final else "N/A",
-            delta=alert_value
+            value=f"{latest[risk + '_risk_prob']:.2f}",
+            delta=latest[risk + "_alert"]
         )
 
-    st.subheader("🧾 Detailed Output")
-    st.dataframe(df_final.tail(24))
+    st.subheader("🧾 Detailed Output (Today)")
+
+    # -------------------------------
+    # Select key columns for display
+    # -------------------------------
+    columns_to_show = [
+        "date",
+        "temperature_mean",
+        "relative_humidity_mean",
+        "rainfall",
+        "flood_risk_prob",
+        "flood_risk_alert",
+        "rain_risk_prob",
+        "rain_risk_alert",
+        "storm_risk_prob",
+        "storm_risk_alert",
+        "landslide_risk_prob",
+        "landslide_risk_alert",
+        "overall_alert"
+    ]
+
+    # Ensure 'date' is datetime
+    df_final["date"] = pd.to_datetime(df_final["date"]).dt.date
+
+    # Filter for today
+    today = datetime.now().date()
+    df_today = df_final[df_final["date"] == today]
+
+    st.dataframe(df_today[columns_to_show])
 
 else:
     st.info("👈 Click **Fetch & Predict** to run the model.")
