@@ -2,6 +2,7 @@
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 
 from src.data_fetch import fetch_real_time_weather
 from src.feature_engineering import engineer_features
@@ -57,50 +58,55 @@ if refresh:
         df_final = apply_risk_alerts(df_pred)
 
     # -------------------------------
-    # Display Latest Risk Assessment
+    # Latest Day Selection (24-hour view)
     # -------------------------------
-    st.subheader("📊 Latest Risk Assessment")
+    df_final['date_only'] = pd.to_datetime(df_final['datetime']).dt.date
+    latest_day = df_final['date_only'].max()
+    df_today = df_final[df_final['date_only'] == latest_day]
 
-    latest = df_final.iloc[-1]
+    st.subheader(f"📊 Latest Risk Assessment ({latest_day})")
 
-    cols = st.columns(4)
+    # Show max risk of the day as summary
+    risk_cols = [c.replace("_risk_prob", "") for c in df_today.columns if c.endswith("_risk_prob")]
+    cols = st.columns(len(risk_cols))
 
-    for i, risk in enumerate(
-        [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
-    ):
-        alert_col = risk + "_risk_alert"
-        # Use .get() to avoid KeyError if column missing
+    latest = df_today.iloc[-1]  # Or use max aggregation per risk
+    for i, risk in enumerate(risk_cols):
+        # Use max risk probability for summary
+        max_prob = df_today[risk + "_risk_prob"].max()
+        # Use max alert for delta (or last alert)
+        max_alert = df_today[risk + "_risk_alert"].max() if (risk + "_risk_alert") in df_today.columns else None
+
         cols[i].metric(
             label=risk.replace("_", " ").title(),
-            value=f"{latest[risk + '_risk_prob']:.2f}",
-            delta=latest.get(alert_col, 0)  # default to 0 if alert column missing
+            value=f"{max_prob:.2f}",
+            delta=max_alert
         )
 
     # -------------------------------
-    # Detailed Output (Latest Available)
+    # Detailed 24-hour table
     # -------------------------------
-    st.subheader("🧾 Detailed Output (Latest Available)")
-
-    # Get the latest timestamp in your data
-    latest_date = df_final['date'].max()
-    df_latest = df_final[df_final['date'] == latest_date]
-
-    # Select columns to show, fewer than all
+    st.subheader("🧾 Detailed Output (Latest Day)")
     selected_cols = [
-        'date', 'temperature_mean', 'relative_humidity_mean', 'precipitation_sum',
-        'flood_risk_prob', 'flood_risk_alert',
-        'rain_risk_prob', 'rain_risk_alert',
-        'storm_risk_prob', 'storm_risk_alert',
-        'landslide_risk_prob', 'landslide_risk_alert',
-        'overall_alert'
+        'datetime',  # show timestamp
+        # keep only main numeric variables if too many columns exist
     ]
 
-    # Filter only available columns to prevent KeyError
-    selected_cols = [c for c in selected_cols if c in df_latest.columns]
+    # Add risk probs and alerts
+    for risk in risk_cols:
+        selected_cols.append(risk + "_risk_prob")
+        if risk + "_risk_alert" in df_today.columns:
+            selected_cols.append(risk + "_risk_alert")
 
-    df_latest = df_latest[selected_cols]
+    # Include overall alert if exists
+    if 'overall_alert' in df_today.columns:
+        selected_cols.append('overall_alert')
 
-    st.dataframe(df_latest)
+    # Keep only existing columns to avoid KeyError
+    selected_cols = [c for c in selected_cols if c in df_today.columns]
+    df_today = df_today[selected_cols]
+
+    st.dataframe(df_today.reset_index(drop=True))
 
 else:
     st.info("👈 Click **Fetch & Predict** to run the model.")
