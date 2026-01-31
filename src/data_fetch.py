@@ -7,18 +7,14 @@ from retry_requests import retry
 import openmeteo_requests
 
 
-def fetch_real_time_hourly(
-    latitude=14.5995,
-    longitude=120.9842,
-    timezone="Asia/Singapore"
-):
+def fetch_real_time_weather(latitude: float, longitude: float) -> pd.DataFrame:
     """
-    Fetch real-time hourly weather data from Open-Meteo
-    and return a cleaned pandas DataFrame.
+    Fetch real-time hourly weather data from Open-Meteo API
+    and return a cleaned DataFrame.
     """
 
     # -------------------------------
-    # API setup
+    # API Setup
     # -------------------------------
     cache_session = requests_cache.CachedSession(
         ".cache", expire_after=3600
@@ -31,7 +27,7 @@ def fetch_real_time_hourly(
     )
 
     # -------------------------------
-    # API request
+    # API Request
     # -------------------------------
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
@@ -57,7 +53,7 @@ def fetch_real_time_hourly(
             "soil_temperature_18cm",
             "soil_temperature_54cm"
         ],
-        "timezone": timezone
+        "timezone": "Asia/Singapore"
     }
 
     responses = openmeteo.weather_api(url, params=params)
@@ -65,7 +61,7 @@ def fetch_real_time_hourly(
     hourly = response.Hourly()
 
     # -------------------------------
-    # Extract hourly data
+    # Extract Hourly Data
     # -------------------------------
     hourly_data = {
         "date": pd.date_range(
@@ -97,7 +93,7 @@ def fetch_real_time_hourly(
     df = pd.DataFrame(hourly_data)
 
     # -------------------------------
-    # Convert timezone → Asia/Manila
+    # Timezone conversion (PH)
     # -------------------------------
     df["date"] = (
         pd.to_datetime(df["date"], utc=True)
@@ -118,24 +114,14 @@ def fetch_real_time_hourly(
         "precipitation": "precipitation_sum",
         "rain": "rain_sum",
         "cloud_cover": "cloud_cover_total",
-        "dew_point_2m": "dew_point_mean",
-        "soil_moisture_0_to_1cm": "soil_moisture_top",
-        "soil_moisture_1_to_3cm": "soil_moisture_1_3cm",
-        "soil_moisture_3_to_9cm": "soil_moisture_3_9cm",
-        "soil_moisture_9_to_27cm": "soil_moisture_9_27cm",
-        "soil_temperature_0cm": "soil_temperature_top",
-        "soil_temperature_6cm": "soil_temperature_6cm",
-        "soil_temperature_18cm": "soil_temperature_18cm",
-        "soil_temperature_54cm": "soil_temperature_54cm"
+        "dew_point_2m": "dew_point_mean"
     }, inplace=True)
 
     # -------------------------------
-    # Handle NaNs safely
+    # Handle NaNs
     # -------------------------------
     numeric_cols = df.select_dtypes(include=[np.number]).columns
-    df[numeric_cols] = df[numeric_cols].interpolate(
-        method="linear", limit_direction="both"
-    )
+    df[numeric_cols] = df[numeric_cols].interpolate(limit_direction="both")
     df[numeric_cols] = df[numeric_cols].ffill()
 
     for col in numeric_cols:
