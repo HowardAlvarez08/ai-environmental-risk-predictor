@@ -57,7 +57,7 @@ if refresh:
         df_final = apply_risk_alerts(df_pred)
 
     # -------------------------------
-    # Display Latest Risk Assessment
+    # Display Results
     # -------------------------------
     st.subheader("📊 Latest Risk Assessment")
 
@@ -76,7 +76,7 @@ if refresh:
         )
 
     # -------------------------------
-    # Display Detailed Output (Key Columns Only)
+    # Show only relevant columns in detailed output
     # -------------------------------
     columns_to_show = [
         "temperature_mean",
