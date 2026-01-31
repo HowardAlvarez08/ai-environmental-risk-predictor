@@ -2,7 +2,6 @@
 
 import streamlit as st
 import pandas as pd
-import numpy as np
 
 from src.data_fetch import fetch_real_time_weather
 from src.feature_engineering import engineer_features
@@ -43,70 +42,77 @@ models = load_all_models()
 # Main Pipeline
 # -------------------------------
 if refresh:
+    # Fetch weather
     with st.spinner("Fetching real-time weather data..."):
         df_raw = fetch_real_time_weather(latitude, longitude)
-
     st.success("✅ Weather data fetched")
 
+    # Feature engineering
     with st.spinner("Engineering features..."):
         df_features = engineer_features(df_raw)
 
+    # Risk prediction
     with st.spinner("Predicting risks..."):
         df_pred = predict_risks(df_features, models)
 
+    # Apply alerts
     with st.spinner("Applying recommendations..."):
         df_final = apply_risk_alerts(df_pred)
 
     # -------------------------------
-    # Latest Day Selection (24-hour view)
+    # Display Latest Risk Assessment
     # -------------------------------
-    df_final['date_only'] = pd.to_datetime(df_final['datetime']).dt.date
-    latest_day = df_final['date_only'].max()
-    df_today = df_final[df_final['date_only'] == latest_day]
+    st.subheader("📊 Latest Risk Assessment")
 
-    st.subheader(f"📊 Latest Risk Assessment ({latest_day})")
+    latest = df_final.iloc[-1]
 
-    # Show max risk of the day as summary
-    risk_cols = [c.replace("_risk_prob", "") for c in df_today.columns if c.endswith("_risk_prob")]
+    # Only pick columns that end with '_risk_prob'
+    risk_cols = [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
     cols = st.columns(len(risk_cols))
 
-    latest = df_today.iloc[-1]  # Or use max aggregation per risk
     for i, risk in enumerate(risk_cols):
-        # Use max risk probability for summary
-        max_prob = df_today[risk + "_risk_prob"].max()
-        # Use max alert for delta (or last alert)
-        max_alert = df_today[risk + "_risk_alert"].max() if (risk + "_risk_alert") in df_today.columns else None
-
+        alert_col = risk + "_alert"
+        # Use 0 if alert column is missing
+        delta_val = latest[alert_col] if alert_col in df_final.columns else 0
         cols[i].metric(
             label=risk.replace("_", " ").title(),
-            value=f"{max_prob:.2f}",
-            delta=max_alert
+            value=f"{latest[risk + '_risk_prob']:.2f}",
+            delta=delta_val
         )
 
     # -------------------------------
-    # Detailed 24-hour table
+    # Latest Day Detailed Output (24h)
     # -------------------------------
     st.subheader("🧾 Detailed Output (Latest Day)")
+
+    # Convert datetime column safely
+    if 'datetime' in df_final.columns:
+        df_final['date_only'] = pd.to_datetime(df_final['datetime']).dt.date
+    elif 'time' in df_final.columns:
+        df_final['date_only'] = pd.to_datetime(df_final['time']).dt.date
+    else:
+        st.error("No datetime column found in data!")
+        st.stop()
+
+    latest_day = df_final['date_only'].max()
+    df_today = df_final[df_final['date_only'] == latest_day]
+
+    # Select only relevant columns to avoid a huge table
     selected_cols = [
-        'datetime',  # show timestamp
-        # keep only main numeric variables if too many columns exist
+        'date_only', 'temperature_mean', 'relative_humidity_mean', 
+        'wind_speed_mean', 'precipitation_sum',
+        'flood_risk_prob', 'flood_risk_alert',
+        'rain_risk_prob', 'rain_risk_alert',
+        'storm_risk_prob', 'storm_risk_alert',
+        'landslide_risk_prob', 'landslide_risk_alert',
+        'overall_alert'
     ]
-
-    # Add risk probs and alerts
-    for risk in risk_cols:
-        selected_cols.append(risk + "_risk_prob")
-        if risk + "_risk_alert" in df_today.columns:
-            selected_cols.append(risk + "_risk_alert")
-
-    # Include overall alert if exists
-    if 'overall_alert' in df_today.columns:
-        selected_cols.append('overall_alert')
-
-    # Keep only existing columns to avoid KeyError
+    # Keep only existing columns (some might be missing)
     selected_cols = [c for c in selected_cols if c in df_today.columns]
+
     df_today = df_today[selected_cols]
 
-    st.dataframe(df_today.reset_index(drop=True))
+    st.dataframe(df_today)
 
 else:
     st.info("👈 Click **Fetch & Predict** to run the model.")
