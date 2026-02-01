@@ -3,8 +3,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-import pytz
 
 from src.data_fetch import fetch_real_time_weather
 from src.feature_engineering import engineer_features
@@ -25,150 +23,134 @@ st.write("Real-time weather-driven risk assessment for floods, storms, rain, and
 # -------------------------------
 # Sidebar Controls
 # -------------------------------
-st.sidebar.header("Location & Forecast Settings")
+st.sidebar.header("Location Settings")
 latitude = st.sidebar.number_input("Latitude", value=14.5995)
 longitude = st.sidebar.number_input("Longitude", value=120.9842)
+
+st.sidebar.header("Forecast Settings")
 forecast_days = st.sidebar.slider("Forecast Days", min_value=1, max_value=7, value=1)
+hour_options = {
+    "Now": 0,
+    "+1 hour": 1,
+    "+2 hours": 2,
+    "+4 hours": 4,
+    "+8 hours": 8,
+    "+12 hours": 12,
+    "+16 hours": 16,
+    "+24 hours": 24,
+}
+selected_offset_label = st.sidebar.selectbox("Select Forecast Time", list(hour_options.keys()))
+offset_hours = hour_options[selected_offset_label]
+
 refresh = st.sidebar.button("🔄 Fetch & Predict")
 
 # -------------------------------
-# Imports
-# -------------------------------
-import streamlit as st
-import pandas as pd
-from datetime import datetime, timedelta
-import pytz
-
-from src.data_fetch import fetch_real_time_weather
-from src.feature_engineering import engineer_features
-from src.predict import predict_risks  # load_models removed
-from src.recommendation import apply_risk_alerts
-
-import os
-import pickle
-
-# -------------------------------
-# Load Models Function (if missing in predict.py)
+# Load models once
 # -------------------------------
 @st.cache_resource
-def load_all_models(model_dir="models"):
-    models = {}
-    if os.path.exists(model_dir):
-        for fname in os.listdir(model_dir):
-            if fname.endswith(".pkl"):
-                model_name = fname.replace(".pkl","")
-                with open(os.path.join(model_dir, fname), "rb") as f:
-                    models[model_name] = pickle.load(f)
-    return models
+def load_all_models():
+    return load_models("models")
 
-# Load models
 models = load_all_models()
-
-
-# -------------------------------
-# Clip ranges to prevent unrealistic predictions
-# -------------------------------
-clip_ranges = {
-    "temperature_mean": (15, 40),
-    "relative_humidity_mean": (20, 100),
-    "wind_speed_max": (0, 25),
-    "wind_gust_max": (0, 50),
-    "precipitation_sum": (0, 200),
-    "rain_sum": (0, 200),
-    "cloud_cover_total": (0, 100),
-    "soil_moisture_mean": (0, 0.5),
-}
 
 # -------------------------------
 # Main Pipeline
 # -------------------------------
 if refresh:
-    # Fetch Weather
     with st.spinner("Fetching real-time weather data..."):
         df_raw = fetch_real_time_weather(latitude, longitude, forecast_days=forecast_days)
     st.success("✅ Weather data fetched")
 
-    # Engineer Features
     with st.spinner("Engineering features..."):
         df_features = engineer_features(df_raw)
 
-    # Predict Risks
     with st.spinner("Predicting risks..."):
-        df_pred = predict_risks(df_features, models, clip_ranges=clip_ranges)
+        df_pred = predict_risks(df_features, models)
 
-    # Apply Alerts / Recommendations
     with st.spinner("Applying recommendations..."):
         df_final = apply_risk_alerts(df_pred)
 
     # -------------------------------
-    # Time Selection
+    # Forecast Hour Dashboard
     # -------------------------------
-    tz_ph = pytz.timezone("Asia/Manila")
-    now_ph = datetime.now(tz_ph)
-    now_ph_str = now_ph.strftime("%I:%M %p")
-    st.write(f"🕒 Current Time (PH): {now_ph_str}")
+    st.subheader("⏱ Forecast Hour Risk Status")
 
-    # Future hour selector
-    future_options = [0, 1, 2, 4, 8, 12, 16, 24]  # hours from now
-    future_hours = st.selectbox(
-        "Select hour from now to view risk status:",
-        future_options,
-        format_func=lambda x: f"+{x} hour(s)" if x > 0 else "Now"
-    )
+    # Target datetime
+    now_ph = pd.Timestamp.now(tz="Asia/Manila")
+    target_time = now_ph + pd.Timedelta(hours=offset_hours)
+    target_time_str = target_time.strftime("%I:%M %p")
+    st.write(f"Showing risk status for: **{target_time_str}**")
 
-    target_time = now_ph + timedelta(hours=future_hours)
+    # Ensure date column is timezone-aware
+    if df_final["date"].dt.tz is None:
+        df_final["date"] = df_final["date"].dt.tz_localize("Asia/Manila")
 
-    # Ensure df_final['date'] is tz-aware
-    if df_final['date'].dt.tz is None:
-        df_final['date'] = df_final['date'].dt.tz_localize(tz_ph)
-
-    # Find closest hour row
+    # Find the row closest to target_time
     df_final['hour_diff'] = abs(df_final['date'] - target_time)
-    current_row = df_final.loc[df_final['hour_diff'].idxmin()]
+    forecast_row = df_final.loc[df_final['hour_diff'].idxmin()]
 
-    # -------------------------------
-    # Current / Future Hour Dashboard
-    # -------------------------------
-    st.subheader(f"📊 Risk Status at {target_time.strftime('%I:%M %p')} (PH)")
+    # List of risk columns
+    risk_columns = [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
 
-    cols_current = st.columns(4)
-    risk_cols = [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
+    # Display risk metrics (color-coded)
+    cols_forecast = st.columns(len(risk_columns))
+    for i, risk in enumerate(risk_columns):
+        prob = forecast_row[risk + "_risk_prob"]
+        alert = forecast_row.get(risk + "_risk_alert", "")
+        label = risk.replace("_", " ").title()
 
-    for i, risk in enumerate(risk_cols):
-        prob = current_row[risk + "_risk_prob"]
-        alert = current_row[risk + "_risk_alert"]
-        cols_current[i].metric(
-            label=risk.replace("_", " ").title(),
+        if prob < 0.3:
+            color = "✅"
+        elif prob < 0.7:
+            color = "⚠️"
+        else:
+            color = "🚨"
+
+        cols_forecast[i].metric(
+            label=label,
             value=f"{prob:.2f}",
-            delta=alert
+            delta=f"{color} {alert}"
         )
 
     # -------------------------------
-    # Recommended Actions
+    # Recommended Actions / Preparations
     # -------------------------------
     st.subheader("🛠 Recommended Actions / Preparations")
+    for risk in risk_columns:
+        prob = forecast_row[risk + "_risk_prob"]
+        label = risk.replace("_", " ").title()
 
-    def recommend_actions(prob):
-        """Return action based on risk probability"""
         if prob < 0.3:
-            return "Low Risk: Stay alert, monitor local weather updates."
+            action_text = (
+                f"✅ **{label} – Low Risk:** Stay aware and monitor updates. "
+                "No immediate action required."
+            )
         elif prob < 0.7:
-            return "Moderate Risk: Prepare emergency kit, review evacuation plans."
+            action_text = (
+                f"⚠️ **{label} – Moderate Risk:** Prepare emergency kits, "
+                "check your surroundings, and avoid risky areas. Stay alert."
+            )
         else:
-            return "Severe Risk: Follow official advisories immediately, consider evacuation."
+            action_text = (
+                f"🚨 **{label} – Severe Risk:** Take immediate precautions. "
+                "Follow local government advisories, move to safe areas if necessary, "
+                "stock essential supplies, and avoid travel."
+            )
 
-    for risk in risk_cols:
-        prob = current_row[risk + "_risk_prob"]
-        action = recommend_actions(prob)
-        st.markdown(f"**{risk.replace('_',' ').title()}** ({prob:.2f}): {action}")
+        st.markdown(action_text)
 
     # -------------------------------
-    # Simplified Detailed Output
+    # Detailed Output Table
     # -------------------------------
-    st.subheader("🧾 Detailed Forecast Output (Relevant Columns)")
-    feature_cols = [c for c in df_final.columns if "risk_prob" in c or "risk_alert" in c]
-    display_cols = ["date"] + feature_cols
-    st.dataframe(df_final[display_cols].tail(24), use_container_width=True)
+    st.subheader("🧾 Detailed Forecast Data (Relevant Columns)")
+
+    feature_cols = [
+        c for c in df_final.columns 
+        if c.endswith("_risk_prob") or c.endswith("_risk_alert") or c == "date"
+    ]
+    df_final_unique = df_final.loc[:, ~df_final.columns.duplicated()]
+    display_cols = [c for c in feature_cols if c in df_final_unique.columns]
+    st.dataframe(df_final_unique[display_cols].tail(24), use_container_width=True)
 
 else:
     st.info("👈 Click **Fetch & Predict** to run the model.")
