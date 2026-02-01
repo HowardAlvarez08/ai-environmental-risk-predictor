@@ -25,11 +25,14 @@ st.write("Real-time weather-driven risk assessment for floods, storms, rain, and
 # -------------------------------
 # Sidebar Controls
 # -------------------------------
-st.sidebar.header("Location & Forecast Settings")
-
+st.sidebar.header("Location Settings")
 latitude = st.sidebar.number_input("Latitude", value=14.5995)
 longitude = st.sidebar.number_input("Longitude", value=120.9842)
-forecast_days = st.sidebar.slider("Forecast Days", min_value=1, max_value=7, value=1)
+
+st.sidebar.header("Forecast Settings")
+forecast_days = st.sidebar.slider(
+    "Forecast Days (1–7)", min_value=1, max_value=7, value=1
+)
 
 refresh = st.sidebar.button("🔄 Fetch & Predict")
 
@@ -46,98 +49,94 @@ models = load_all_models()
 # Main Pipeline
 # -------------------------------
 if refresh:
+    # -------------------------------
+    # Fetch weather
+    # -------------------------------
     with st.spinner("Fetching real-time weather data..."):
-        df_raw = fetch_real_time_weather(latitude, longitude, forecast_days)
-
+        df_raw = fetch_real_time_weather(latitude, longitude, forecast_days=forecast_days)
     st.success("✅ Weather data fetched")
 
+    # -------------------------------
+    # Feature Engineering
+    # -------------------------------
     with st.spinner("Engineering features..."):
         df_features = engineer_features(df_raw)
 
+    # -------------------------------
+    # Predict Risks
+    # -------------------------------
     with st.spinner("Predicting risks..."):
         df_pred = predict_risks(df_features, models)
 
-    with st.spinner("Applying recommendations..."):
+    # -------------------------------
+    # Apply Risk Alerts
+    # -------------------------------
+    with st.spinner("Applying recommended actions..."):
         df_final = apply_risk_alerts(df_pred)
 
     # -------------------------------
-    # Current Hour Dashboard
+    # Current Time Dashboard
     # -------------------------------
     now_ph = datetime.now(pytz.timezone("Asia/Manila"))
-    now_ph_str = now_ph.strftime("%I:%M %p")
+    now_ph_hour = now_ph.replace(minute=0, second=0, microsecond=0)
+    now_ph_str = now_ph.strftime("%I:%M %p")  # AM/PM format
     st.subheader(f"⏱ Current Hour Risk Status ({now_ph_str})")
 
-    # Ensure date column is timezone-aware for comparison
-    if df_final["date"].dt.tz is None:
-        df_final["date"] = df_final["date"].dt.tz_localize("Asia/Manila")
+    # Align datetime types
+    if df_final["date"].dt.tz is not None:
+        df_final["date"] = df_final["date"].dt.tz_localize(None)
 
-    # Find the row closest to current hour
-    df_final['hour_diff'] = abs(df_final['date'] - now_ph)
-    current_row = df_final.loc[df_final['hour_diff'].idxmin()]
+    df_final["hour_diff"] = abs(df_final["date"] - now_ph_hour)
+    current_row = df_final.loc[df_final["hour_diff"].idxmin()]
 
-    # List of risk columns
-    risk_columns = [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
-
-    # Display current risk metrics
-    cols_current = st.columns(len(risk_columns))
-    for i, risk in enumerate(risk_columns):
+    cols_current = st.columns(4)
+    for i, risk in enumerate([r.replace("_risk_prob", "") for r in df_final.columns if r.endswith("_risk_prob")]):
         prob = current_row[risk + "_risk_prob"]
-        alert = current_row.get(risk + "_risk_alert", "")
-        label = risk.replace("_", " ").title()
-
-        # Color-coded based on probability
-        if prob < 0.3:
-            color = "✅"
-        elif prob < 0.7:
-            color = "⚠️"
-        else:
-            color = "🚨"
-
+        alert = current_row[risk + "_risk_alert"]
         cols_current[i].metric(
-            label=label,
+            label=risk.replace("_", " ").title(),
             value=f"{prob:.2f}",
-            delta=f"{color} {alert}"
+            delta=alert
         )
+
+    # -------------------------------
+    # Vertical space before Recommended Actions
+    # -------------------------------
+    st.markdown("<br><br>", unsafe_allow_html=True)
 
     # -------------------------------
     # Recommended Actions / Preparations
     # -------------------------------
     st.subheader("🛠 Recommended Actions / Preparations")
-    for risk in risk_columns:
+    risk_levels = ["Low", "Moderate", "Severe"]
+
+    for risk in [r.replace("_risk_prob", "") for r in df_final.columns if r.endswith("_risk_prob")]:
         prob = current_row[risk + "_risk_prob"]
-        label = risk.replace("_", " ").title()
-
         if prob < 0.3:
-            action_text = (
-                f"✅ **{label} – Low Risk:** Stay aware and monitor updates. "
-                "No immediate action required."
-            )
+            level = "Low"
+            actions = f"- Monitor local weather updates\n- Stay alert but no immediate action required for {risk}"
         elif prob < 0.7:
-            action_text = (
-                f"⚠️ **{label} – Moderate Risk:** Prepare emergency kits, "
-                "check your surroundings, and avoid risky areas. Stay alert."
-            )
+            level = "Moderate"
+            actions = f"- Prepare emergency kits\n- Check evacuation routes\n- Stay updated for {risk}"
         else:
-            action_text = (
-                f"🚨 **{label} – Severe Risk:** Take immediate precautions. "
-                "Follow local government advisories, move to safe areas if necessary, "
-                "stock essential supplies, and avoid travel."
-            )
+            level = "Severe"
+            actions = f"- Evacuate if necessary\n- Follow local authority instructions\n- Secure property for {risk}"
 
-        st.markdown(action_text)
+        st.markdown(f"**{risk.replace('_', ' ').title()} Risk:** {level}")
+        st.markdown(actions)
+        st.markdown("<br>", unsafe_allow_html=True)  # space between each risk
 
     # -------------------------------
-    # Detailed Output
+    # Vertical space before Detailed Output
+    # -------------------------------
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # -------------------------------
+    # Detailed Output Table
     # -------------------------------
     st.subheader("🧾 Detailed Output (Forecast)")
-
-    # Remove duplicates
-    df_final = df_final.loc[:, ~df_final.columns.duplicated()]
-
-    # Keep only relevant columns
-    feature_cols = [c for c in df_final.columns if "risk_prob" in c or "risk_alert" in c]
-    display_cols = ["date"] + feature_cols
-    st.dataframe(df_final[display_cols].tail(24), use_container_width=True)
+    feature_cols = [c for c in df_final.columns if "risk_prob" in c or "risk_alert" in c or c == "date"]
+    st.dataframe(df_final[feature_cols], use_container_width=True)
 
 else:
     st.info("👈 Click **Fetch & Predict** to run the model.")
