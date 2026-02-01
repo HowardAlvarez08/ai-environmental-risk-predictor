@@ -43,20 +43,6 @@ def load_all_models():
 models = load_all_models()
 
 # -------------------------------
-# Helper: color-coded alert
-# -------------------------------
-def format_alert(prob, alert_value):
-    """
-    Return a colored alert string based on risk probability or alert value
-    """
-    if alert_value == 0 or prob < 0.3:
-        return "✅ Low"
-    elif alert_value == 1 or prob < 0.7:
-        return "⚠️ Moderate"
-    else:
-        return "❌ Severe"
-
-# -------------------------------
 # Main Pipeline
 # -------------------------------
 if refresh:
@@ -87,42 +73,43 @@ if refresh:
     now_ph_str = now_ph.strftime("%I:%M %p")
     st.write(f"Current Time: {now_ph_str}")
 
-    # Ensure tz-aware
-    df_final['date'] = pd.to_datetime(df_final['date']).dt.tz_localize(manila_tz, ambiguous='NaT', nonexistent='shift_forward')
+    # Ensure df_final['date'] is timezone-aware
+    df_final['date'] = pd.to_datetime(df_final['date']).dt.tz_localize(manila_tz)
 
     # Find the row closest to current hour
     df_final['hour_diff'] = abs(df_final['date'] - now_ph)
     current_row = df_final.loc[df_final['hour_diff'].idxmin()]
+    df_final.drop(columns=['hour_diff'], inplace=True)
 
     # -------------------------------
-    # Risk matrix display
+    # Color-coded risk metrics
     # -------------------------------
+    def risk_color(val):
+        if val < 0.3:
+            return "✅ Low"
+        elif val < 0.7:
+            return "⚠️ Moderate"
+        else:
+            return "🚨 Severe"
+
+    cols_current = st.columns(4)
     risk_columns = [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
 
-    st.markdown("<div style='display:flex; gap:2rem;'>", unsafe_allow_html=True)
-    for risk in risk_columns:
+    for i, risk in enumerate(risk_columns):
         prob = current_row[risk + "_risk_prob"]
-        alert_val = current_row.get(risk + "_alert", 0)
-        alert_str = format_alert(prob, alert_val)
-        
-        # Metric-like vertical layout
-        st.markdown(f"""
-            <div style='text-align:center;'>
-                <div style='font-size:24px; font-weight:bold;'>{prob:.2f}</div>
-                <div style='font-size:18px;'>{alert_str}</div>
-                <div style='margin-bottom:10px;'></div>
-            </div>
-        """, unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    df_final.drop(columns=['hour_diff'], inplace=True)
+        alert = current_row.get(risk + "_alert", 0)
+        cols_current[i].metric(
+            label=risk.replace("_", " ").title(),
+            value=f"{prob:.2f} ({risk_color(prob)})",
+            delta=alert
+        )
 
     # -------------------------------
     # Detailed Output (relevant columns only)
     # -------------------------------
     feature_cols = [c for c in df_final.columns if "risk_prob" in c or "_alert" in c]
     display_cols = ["date"] + feature_cols
-    st.subheader("🧾 Detailed Output")
+    st.subheader("🧾 Detailed Output (Forecast Data)")
     st.dataframe(df_final[display_cols], use_container_width=True)
 
 else:
