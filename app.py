@@ -81,16 +81,26 @@ if refresh:
     current_row = df_final.loc[df_final['hour_diff'].idxmin()]
     df_final.drop(columns=['hour_diff'], inplace=True)
 
-    # Display metrics vertically
-    st.markdown("### Risk Scores")
+    # -------------------------------
+    # Display risk metrics vertically with color-coding
+    # -------------------------------
+    def risk_level_label(prob):
+        if prob >= 0.7:
+            return "🚨 High", "#ff4b4b"  # Red
+        elif prob >= 0.3:
+            return "⚠️ Medium", "#ffb84d"  # Orange
+        else:
+            return "✅ Low", "#6aff6a"  # Green
+
     risk_columns = [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
-    
     for risk in risk_columns:
-        value = f"{current_row[risk + '_risk_prob']:.2f}"
-        alert_label = current_row.get(risk + "_alert", "N/A")
-        st.markdown(f"**{risk.replace('_', ' ').title()}**")
-        st.markdown(f"{value}  \n{alert_label}")
-        st.markdown("---")
+        prob = current_row[risk + "_risk_prob"]
+        label, color = risk_level_label(prob)
+        st.markdown(
+            f"<div style='text-align:center; font-size:24px; color:{color};'>"
+            f"{prob:.2f}<br>{label}</div>",
+            unsafe_allow_html=True
+        )
 
     # -------------------------------
     # Detailed Output (relevant columns only)
