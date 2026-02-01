@@ -63,44 +63,30 @@ if refresh:
 
     latest = df_final.iloc[-1]
 
+    # Show risk metrics
     cols = st.columns(4)
-
-    # Automatically detect risk types
     risk_names = [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
 
     for i, risk in enumerate(risk_names):
+        alert_col = risk + "_risk_alert" if risk + "_risk_alert" in df_final.columns else None
+        delta_val = latest[alert_col] if alert_col else None
+
         cols[i].metric(
             label=risk.replace("_", " ").title(),
             value=f"{latest[risk + '_risk_prob']:.2f}",
-            delta=latest[risk + "_risk_alert"]  # fixed column name
+            delta=delta_val
         )
 
-    # -------------------------------
-    # Detailed Output: show only relevant columns
-    # -------------------------------
     st.subheader("🧾 Detailed Output")
 
-    # Select columns to display
-    display_cols = [
-        "date",
-        "temperature_mean",
-        "relative_humidity_mean",
-        "wind_speed_mean",
-        "precipitation",
-    ]
+    # Only keep relevant columns for table
+    relevant_cols = ["date"] + [f"{r}_risk_prob" for r in risk_names] + \
+                    [f"{r}_risk_alert" for r in risk_names] + \
+                    ["overall_alert"] if "overall_alert" in df_final.columns else []
 
-    # Add risk columns
-    for risk in risk_names:
-        display_cols += [risk + "_risk_prob", risk + "_risk_alert"]
+    df_display = df_final[relevant_cols] if relevant_cols else df_final
 
-    # Always include overall alert if it exists
-    if "overall_alert" in df_final.columns:
-        display_cols.append("overall_alert")
-
-    # Filter columns that exist in df_final
-    display_cols = [c for c in display_cols if c in df_final.columns]
-
-    st.dataframe(df_final[display_cols].tail(24))  # last 24 rows for context
+    st.dataframe(df_display)
 
 else:
     st.info("👈 Click **Fetch & Predict** to run the model.")
