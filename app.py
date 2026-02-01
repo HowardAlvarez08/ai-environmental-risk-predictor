@@ -27,6 +27,14 @@ st.sidebar.header("Location Settings")
 latitude = st.sidebar.number_input("Latitude", value=14.5995)
 longitude = st.sidebar.number_input("Longitude", value=120.9842)
 
+forecast_days = st.sidebar.slider(
+    "Forecast Days",
+    min_value=1,
+    max_value=7,
+    value=1,
+    help="Choose how many days of weather forecast you want to fetch (1–7 days)."
+)
+
 refresh = st.sidebar.button("🔄 Fetch & Predict")
 
 # -------------------------------
@@ -42,10 +50,10 @@ models = load_all_models()
 # Main Pipeline
 # -------------------------------
 if refresh:
-    with st.spinner("Fetching real-time weather data..."):
-        df_raw = fetch_real_time_weather(latitude, longitude)
+    with st.spinner(f"Fetching real-time weather data for {forecast_days} day(s)..."):
+        df_raw = fetch_real_time_weather(latitude, longitude, forecast_days=forecast_days)
 
-    st.success("✅ Weather data fetched")
+    st.success(f"✅ Weather data fetched for {forecast_days} day(s)")
 
     with st.spinner("Engineering features..."):
         df_features = engineer_features(df_raw)
