@@ -79,31 +79,29 @@ if refresh:
     # Find the row closest to current hour
     df_final['hour_diff'] = abs(df_final['date'] - now_ph)
     current_row = df_final.loc[df_final['hour_diff'].idxmin()]
+    df_final.drop(columns=['hour_diff'], inplace=True)
+
+    # -------------------------------
+    # Color-coded risk metrics
+    # -------------------------------
+    def risk_color(val):
+        if val < 0.3:
+            return "✅ Low"
+        elif val < 0.7:
+            return "⚠️ Moderate"
+        else:
+            return "🚨 Severe"
 
     cols_current = st.columns(4)
     risk_columns = [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
 
     for i, risk in enumerate(risk_columns):
+        prob = current_row[risk + "_risk_prob"]
+        alert = current_row.get(risk + "_alert", 0)
         cols_current[i].metric(
             label=risk.replace("_", " ").title(),
-            value=f"{current_row[risk + '_risk_prob']:.2f}",
-            delta=current_row.get(risk + "_alert", 0)
-        )
-
-    df_final.drop(columns=['hour_diff'], inplace=True)
-
-    # -------------------------------
-    # Display Results
-    # -------------------------------
-    st.subheader("📊 Latest Risk Assessment")
-    latest = df_final.iloc[-1]
-
-    cols = st.columns(4)
-    for i, risk in enumerate(risk_columns):
-        cols[i].metric(
-            label=risk.replace("_", " ").title(),
-            value=f"{latest[risk + '_risk_prob']:.2f}",
-            delta=latest.get(risk + "_alert", 0)
+            value=f"{prob:.2f} ({risk_color(prob)})",
+            delta=alert
         )
 
     # -------------------------------
@@ -111,7 +109,7 @@ if refresh:
     # -------------------------------
     feature_cols = [c for c in df_final.columns if "risk_prob" in c or "_alert" in c]
     display_cols = ["date"] + feature_cols
-    st.subheader("🧾 Detailed Output")
+    st.subheader("🧾 Detailed Output (Forecast Data)")
     st.dataframe(df_final[display_cols], use_container_width=True)
 
 else:
