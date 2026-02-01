@@ -7,10 +7,11 @@ from retry_requests import retry
 import openmeteo_requests
 
 
-def fetch_real_time_weather(latitude: float, longitude: float) -> pd.DataFrame:
+def fetch_real_time_weather(latitude: float, longitude: float, forecast_days: int = 1) -> pd.DataFrame:
     """
     Fetch real-time hourly weather data from Open-Meteo API
     and return a cleaned DataFrame.
+    forecast_days: number of days to fetch (1-7)
     """
 
     # -------------------------------
