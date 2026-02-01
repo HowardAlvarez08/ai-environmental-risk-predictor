@@ -3,6 +3,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import pytz
 
 from src.data_fetch import fetch_real_time_weather
 from src.feature_engineering import engineer_features
@@ -27,8 +28,7 @@ st.sidebar.header("Location & Forecast Settings")
 
 latitude = st.sidebar.number_input("Latitude", value=14.5995)
 longitude = st.sidebar.number_input("Longitude", value=120.9842)
-
-forecast_days = st.sidebar.slider("Forecast Days", min_value=1, max_value=7, value=1, step=1)
+forecast_days = st.sidebar.slider("Forecast Days", min_value=1, max_value=7, value=1)
 
 refresh = st.sidebar.button("🔄 Fetch & Predict")
 
@@ -48,7 +48,7 @@ if refresh:
     with st.spinner("Fetching real-time weather data..."):
         df_raw = fetch_real_time_weather(latitude, longitude, forecast_days=forecast_days)
 
-    st.success(f"✅ Weather data fetched for the next {forecast_days} day(s)")
+    st.success("✅ Weather data fetched")
 
     with st.spinner("Engineering features..."):
         df_features = engineer_features(df_raw)
@@ -60,11 +60,11 @@ if refresh:
         df_final = apply_risk_alerts(df_pred)
 
     # -------------------------------
-    # Show current hour snapshot
+    # Current Hour Risk Status
     # -------------------------------
     st.subheader("⏰ Current Hour Risk Status")
-
-    now_ph = datetime.now()
+    manila_tz = pytz.timezone("Asia/Manila")
+    now_ph = datetime.now(manila_tz)
     now_ph_str = now_ph.strftime("%I:%M %p")
     st.write(f"Current Time: {now_ph_str}")
 
@@ -85,10 +85,9 @@ if refresh:
     df_final.drop(columns=['hour_diff'], inplace=True)
 
     # -------------------------------
-    # Display Results
+    # Display Latest Risk Assessment
     # -------------------------------
     st.subheader("📊 Latest Risk Assessment")
-
     latest = df_final.iloc[-1]
 
     cols = st.columns(4)
@@ -99,13 +98,19 @@ if refresh:
             delta=latest.get(risk + "_alert", 0)
         )
 
+    # -------------------------------
+    # Detailed Output
+    # -------------------------------
     st.subheader("🧾 Detailed Output")
 
-    # Select relevant columns: date + numeric weather features + risk alerts
+    # Only relevant columns
     feature_cols = [c for c in df_final.columns if "risk_prob" in c or "alert" in c or c in df_raw.columns]
     display_cols = ["date"] + feature_cols
 
-    st.dataframe(df_final[display_cols].tail(24), use_container_width=True)
+    display_df = df_final[display_cols].tail(24)
+    display_df = display_df.loc[:, ~display_df.columns.duplicated()]  # remove duplicate columns
+
+    st.dataframe(display_df, use_container_width=True)
 
 else:
     st.info("👈 Click **Fetch & Predict** to run the model.")
