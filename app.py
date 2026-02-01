@@ -23,18 +23,12 @@ st.write("Real-time weather-driven risk assessment for floods, storms, rain, and
 # -------------------------------
 # Sidebar Controls
 # -------------------------------
-st.sidebar.header("Location Settings")
+st.sidebar.header("Location & Forecast Settings")
 
 latitude = st.sidebar.number_input("Latitude", value=14.5995)
 longitude = st.sidebar.number_input("Longitude", value=120.9842)
 
-forecast_days = st.sidebar.slider(
-    "Forecast Days",
-    min_value=1,
-    max_value=7,
-    value=1,
-    help="Select how many days ahead you want forecasts for."
-)
+forecast_days = st.sidebar.slider("Forecast Days", min_value=1, max_value=7, value=1, step=1)
 
 refresh = st.sidebar.button("🔄 Fetch & Predict")
 
@@ -54,7 +48,7 @@ if refresh:
     with st.spinner("Fetching real-time weather data..."):
         df_raw = fetch_real_time_weather(latitude, longitude, forecast_days=forecast_days)
 
-    st.success("✅ Weather data fetched")
+    st.success(f"✅ Weather data fetched for the next {forecast_days} day(s)")
 
     with st.spinner("Engineering features..."):
         df_features = engineer_features(df_raw)
@@ -70,9 +64,11 @@ if refresh:
     # -------------------------------
     st.subheader("⏰ Current Hour Risk Status")
 
-    now_ph = datetime.now()  # already PH time if data_fetch converts timezone
+    now_ph = datetime.now()
+    now_ph_str = now_ph.strftime("%I:%M %p")
+    st.write(f"Current Time: {now_ph_str}")
 
-    # Find row closest to current time
+    # Find the row closest to current hour
     df_final['hour_diff'] = abs(df_final['date'] - now_ph)
     current_row = df_final.loc[df_final['hour_diff'].idxmin()]
 
@@ -91,11 +87,25 @@ if refresh:
     # -------------------------------
     # Display Results
     # -------------------------------
-    st.subheader("📊 Latest Risk Assessment (All Forecast Hours)")
-    
-    # Only relevant columns: date + risk probs + alerts
-    relevant_cols = ['date'] + [f"{r}_risk_prob" for r in risk_columns] + [f"{r}_alert" for r in risk_columns]
-    st.dataframe(df_final[relevant_cols])
+    st.subheader("📊 Latest Risk Assessment")
+
+    latest = df_final.iloc[-1]
+
+    cols = st.columns(4)
+    for i, risk in enumerate(risk_columns):
+        cols[i].metric(
+            label=risk.replace("_", " ").title(),
+            value=f"{latest[risk + '_risk_prob']:.2f}",
+            delta=latest.get(risk + "_alert", 0)
+        )
+
+    st.subheader("🧾 Detailed Output")
+
+    # Select relevant columns: date + numeric weather features + risk alerts
+    feature_cols = [c for c in df_final.columns if "risk_prob" in c or "alert" in c or c in df_raw.columns]
+    display_cols = ["date"] + feature_cols
+
+    st.dataframe(df_final[display_cols].tail(24), use_container_width=True)
 
 else:
     st.info("👈 Click **Fetch & Predict** to run the model.")
