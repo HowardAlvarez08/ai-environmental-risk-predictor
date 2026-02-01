@@ -43,6 +43,20 @@ def load_all_models():
 models = load_all_models()
 
 # -------------------------------
+# Helper: color-coded alert
+# -------------------------------
+def format_alert(prob, alert_value):
+    """
+    Return a colored alert string based on risk probability or alert value
+    """
+    if alert_value == 0 or prob < 0.3:
+        return "✅ Low"
+    elif alert_value == 1 or prob < 0.7:
+        return "⚠️ Moderate"
+    else:
+        return "❌ Severe"
+
+# -------------------------------
 # Main Pipeline
 # -------------------------------
 if refresh:
@@ -73,34 +87,35 @@ if refresh:
     now_ph_str = now_ph.strftime("%I:%M %p")
     st.write(f"Current Time: {now_ph_str}")
 
-    # Ensure df_final['date'] is timezone-aware
-    df_final['date'] = pd.to_datetime(df_final['date']).dt.tz_localize(manila_tz)
+    # Ensure tz-aware
+    df_final['date'] = pd.to_datetime(df_final['date']).dt.tz_localize(manila_tz, ambiguous='NaT', nonexistent='shift_forward')
 
     # Find the row closest to current hour
     df_final['hour_diff'] = abs(df_final['date'] - now_ph)
     current_row = df_final.loc[df_final['hour_diff'].idxmin()]
-    df_final.drop(columns=['hour_diff'], inplace=True)
 
     # -------------------------------
-    # Display risk metrics vertically with color-coding
+    # Risk matrix display
     # -------------------------------
-    def risk_level_label(prob):
-        if prob >= 0.7:
-            return "🚨 High", "#ff4b4b"  # Red
-        elif prob >= 0.3:
-            return "⚠️ Medium", "#ffb84d"  # Orange
-        else:
-            return "✅ Low", "#6aff6a"  # Green
-
     risk_columns = [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
+
+    st.markdown("<div style='display:flex; gap:2rem;'>", unsafe_allow_html=True)
     for risk in risk_columns:
         prob = current_row[risk + "_risk_prob"]
-        label, color = risk_level_label(prob)
-        st.markdown(
-            f"<div style='text-align:center; font-size:24px; color:{color};'>"
-            f"{prob:.2f}<br>{label}</div>",
-            unsafe_allow_html=True
-        )
+        alert_val = current_row.get(risk + "_alert", 0)
+        alert_str = format_alert(prob, alert_val)
+        
+        # Metric-like vertical layout
+        st.markdown(f"""
+            <div style='text-align:center;'>
+                <div style='font-size:24px; font-weight:bold;'>{prob:.2f}</div>
+                <div style='font-size:18px;'>{alert_str}</div>
+                <div style='margin-bottom:10px;'></div>
+            </div>
+        """, unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    df_final.drop(columns=['hour_diff'], inplace=True)
 
     # -------------------------------
     # Detailed Output (relevant columns only)
