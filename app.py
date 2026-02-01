@@ -2,6 +2,7 @@
 
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 
 from src.data_fetch import fetch_real_time_weather
 from src.feature_engineering import engineer_features
@@ -32,7 +33,7 @@ forecast_days = st.sidebar.slider(
     min_value=1,
     max_value=7,
     value=1,
-    help="Choose how many days of weather forecast you want to fetch (1–7 days)."
+    help="Select how many days ahead you want forecasts for."
 )
 
 refresh = st.sidebar.button("🔄 Fetch & Predict")
@@ -50,10 +51,10 @@ models = load_all_models()
 # Main Pipeline
 # -------------------------------
 if refresh:
-    with st.spinner(f"Fetching real-time weather data for {forecast_days} day(s)..."):
+    with st.spinner("Fetching real-time weather data..."):
         df_raw = fetch_real_time_weather(latitude, longitude, forecast_days=forecast_days)
 
-    st.success(f"✅ Weather data fetched for {forecast_days} day(s)")
+    st.success("✅ Weather data fetched")
 
     with st.spinner("Engineering features..."):
         df_features = engineer_features(df_raw)
@@ -65,36 +66,36 @@ if refresh:
         df_final = apply_risk_alerts(df_pred)
 
     # -------------------------------
-    # Display Results
+    # Show current hour snapshot
     # -------------------------------
-    st.subheader("📊 Latest Risk Assessment")
+    st.subheader("⏰ Current Hour Risk Status")
 
-    latest = df_final.iloc[-1]
+    now_ph = datetime.now()  # already PH time if data_fetch converts timezone
 
-    # Show risk metrics
-    cols = st.columns(4)
-    risk_names = [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
+    # Find row closest to current time
+    df_final['hour_diff'] = abs(df_final['date'] - now_ph)
+    current_row = df_final.loc[df_final['hour_diff'].idxmin()]
 
-    for i, risk in enumerate(risk_names):
-        alert_col = risk + "_risk_alert" if risk + "_risk_alert" in df_final.columns else None
-        delta_val = latest[alert_col] if alert_col else None
+    cols_current = st.columns(4)
+    risk_columns = [c.replace("_risk_prob", "") for c in df_final.columns if c.endswith("_risk_prob")]
 
-        cols[i].metric(
+    for i, risk in enumerate(risk_columns):
+        cols_current[i].metric(
             label=risk.replace("_", " ").title(),
-            value=f"{latest[risk + '_risk_prob']:.2f}",
-            delta=delta_val
+            value=f"{current_row[risk + '_risk_prob']:.2f}",
+            delta=current_row.get(risk + "_alert", 0)
         )
 
-    st.subheader("🧾 Detailed Output")
+    df_final.drop(columns=['hour_diff'], inplace=True)
 
-    # Only keep relevant columns for table
-    relevant_cols = ["date"] + [f"{r}_risk_prob" for r in risk_names] + \
-                    [f"{r}_risk_alert" for r in risk_names] + \
-                    ["overall_alert"] if "overall_alert" in df_final.columns else []
-
-    df_display = df_final[relevant_cols] if relevant_cols else df_final
-
-    st.dataframe(df_display)
+    # -------------------------------
+    # Display Results
+    # -------------------------------
+    st.subheader("📊 Latest Risk Assessment (All Forecast Hours)")
+    
+    # Only relevant columns: date + risk probs + alerts
+    relevant_cols = ['date'] + [f"{r}_risk_prob" for r in risk_columns] + [f"{r}_alert" for r in risk_columns]
+    st.dataframe(df_final[relevant_cols])
 
 else:
     st.info("👈 Click **Fetch & Predict** to run the model.")
