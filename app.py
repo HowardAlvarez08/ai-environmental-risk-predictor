@@ -32,13 +32,38 @@ forecast_days = st.sidebar.slider("Forecast Days", min_value=1, max_value=7, val
 refresh = st.sidebar.button("🔄 Fetch & Predict")
 
 # -------------------------------
-# Load models once
+# Imports
+# -------------------------------
+import streamlit as st
+import pandas as pd
+from datetime import datetime, timedelta
+import pytz
+
+from src.data_fetch import fetch_real_time_weather
+from src.feature_engineering import engineer_features
+from src.predict import predict_risks  # load_models removed
+from src.recommendation import apply_risk_alerts
+
+import os
+import pickle
+
+# -------------------------------
+# Load Models Function (if missing in predict.py)
 # -------------------------------
 @st.cache_resource
-def load_all_models():
-    return load_models("models")
+def load_all_models(model_dir="models"):
+    models = {}
+    if os.path.exists(model_dir):
+        for fname in os.listdir(model_dir):
+            if fname.endswith(".pkl"):
+                model_name = fname.replace(".pkl","")
+                with open(os.path.join(model_dir, fname), "rb") as f:
+                    models[model_name] = pickle.load(f)
+    return models
 
+# Load models
 models = load_all_models()
+
 
 # -------------------------------
 # Clip ranges to prevent unrealistic predictions
