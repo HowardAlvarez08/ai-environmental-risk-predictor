@@ -53,7 +53,8 @@ def fetch_real_time_weather(latitude: float, longitude: float) -> pd.DataFrame:
             "soil_temperature_18cm",
             "soil_temperature_54cm"
         ],
-        "timezone": "Asia/Singapore"
+        "timezone": "Asia/Singapore",
+        "forecast_days": 1,
     }
 
     responses = openmeteo.weather_api(url, params=params)
