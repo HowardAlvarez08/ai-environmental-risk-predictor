@@ -29,7 +29,6 @@ longitude = st.sidebar.number_input("Longitude", value=120.9842)
 
 st.sidebar.header("Forecast Settings")
 forecast_days = st.sidebar.slider("Forecast Days", min_value=1, max_value=7, value=1)
-
 hour_options = {
     "Now": 0,
     "+1 hour": 1,
@@ -79,7 +78,7 @@ if refresh:
     # Target datetime
     now_ph = pd.Timestamp.now(tz="Asia/Manila")
     target_time = now_ph + pd.Timedelta(hours=offset_hours)
-    target_time_str = target_time.strftime("%I:%M %p / %b %d, %Y")  # 10:35 PM / Feb 2, 2026
+    target_time_str = target_time.strftime("%A, %b %d, %Y %I:%M %p")
     st.write(f"Showing risk status for: **{target_time_str}**")
 
     # Ensure date column is timezone-aware
