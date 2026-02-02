@@ -78,7 +78,7 @@ if refresh:
     # Target datetime
     now_ph = pd.Timestamp.now(tz="Asia/Manila")
     target_time = now_ph + pd.Timedelta(hours=offset_hours)
-    target_time_str = target_time.strftime("%A, %b %d, %Y %I:%M %p")
+    target_time_str = target_time.strftime("%I:%M %p")
     st.write(f"Showing risk status for: **{target_time_str}**")
 
     # Ensure date column is timezone-aware
